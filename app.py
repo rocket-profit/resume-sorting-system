@@ -21,7 +21,7 @@ load_dotenv()
 
 try:
     if "GOOGLE_API_KEY" in st.secrets:
-        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+        os.environ["GEMINI_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
     if "APP_PASSWORD" in st.secrets:
         os.environ["APP_PASSWORD"] = st.secrets["APP_PASSWORD"]
 except FileNotFoundError:
