@@ -20,8 +20,8 @@ else:
 load_dotenv() 
 
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        os.environ["GEMINI_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
     if "APP_PASSWORD" in st.secrets:
         os.environ["APP_PASSWORD"] = st.secrets["APP_PASSWORD"]
 except FileNotFoundError:
@@ -51,11 +51,11 @@ st.sidebar.success("Access Granted: A1HR Consulting")
 @st.cache_resource
 def init_models():
     # Try to get the key from the environment, and if that fails, grab it directly from Streamlit secrets
-    api_key = os.environ.get("GOOGLE_API_KEY") 
+    api_key = os.environ.get("GEMINI_API_KEY") 
     
     if not api_key:
         try:
-            api_key = st.secrets["GOOGLE_API_KEY"]
+            api_key = st.secrets["GEMINI_API_KEY"]
         except:
             api_key = None
             
