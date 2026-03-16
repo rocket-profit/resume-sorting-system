@@ -50,13 +50,25 @@ st.sidebar.success("Access Granted: A1HR Consulting")
 # 4. INITIALIZE MODELS (Hardwired for Cloud Stability)
 @st.cache_resource
 def init_models():
-    api_key = os.environ.get("GOOGLE_API_KEY")
+    # Try to get the key from the environment, and if that fails, grab it directly from Streamlit secrets
+    api_key = os.environ.get("GOOGLE_API_KEY") 
+    
+    if not api_key:
+        try:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+        except:
+            api_key = None
+            
+    # The Safety Net
+    if not api_key:
+        st.error("🚨 CRITICAL SYSTEM ERROR: API Key missing from Streamlit Secrets.")
+        st.stop()
+        
     embeddings = GoogleGenerativeAIEmbeddings(model='models/embedding-001', google_api_key=api_key)
     llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', google_api_key=api_key)
     return embeddings, llm
 
 embeddings, llm = init_models()
-
 # 5. HELPER FUNCTION
 def extract_text(feed):
     text = ""
