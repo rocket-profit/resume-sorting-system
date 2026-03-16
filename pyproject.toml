@@ -16,6 +16,7 @@ dependencies = [
     "pdf2image>=1.17.0",
     "pypdf2>=3.0.1",
     "pytesseract>=0.3.13",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.2",
     "scikit-learn>=1.8.0",
     "streamlit>=1.55.0",

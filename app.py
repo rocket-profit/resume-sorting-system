@@ -1,66 +1,85 @@
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 import streamlit as st
-from PyPDF2 import PdfReader
-from sklearn.metrics.pairwise import cosine_similarity
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
+from PyPDF2 import PdfReader
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
-import pytesseract
-from pdf2image import convert_from_bytes
+import docx
 
+# 1. SETUP & PAGE CONFIG (Must be first)
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-# Page Config
+if st.session_state.authenticated:
+    st.set_page_config(page_title='Rocket Profit AI', page_icon="🚀", layout="wide", initial_sidebar_state="collapsed")
+else:
+    st.set_page_config(page_title='Rocket Profit AI', page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
 
-st.set_page_config(page_title='Rocket Profit AI Resume Sorter', page_icon="🚀", layout="wide")
-load_dotenv()
+# 2. LOAD SECRETS (The Bridge for Cloud Deployment)
+load_dotenv() 
+
+try:
+    if "GOOGLE_API_KEY" in st.secrets:
+        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    if "APP_PASSWORD" in st.secrets:
+        os.environ["APP_PASSWORD"] = st.secrets["APP_PASSWORD"]
+except FileNotFoundError:
+    pass 
 
 Secret_pass = os.getenv("APP_PASSWORD")
 
-user_pass = st.sidebar.text_input("Enter Access Key", type='password')
+# 3. THE GATEKEEPER (Absolute Security Lock)
+if not st.session_state.authenticated:
+    with st.sidebar:
+        st.header("Security Gateway")
+        user_pass = st.text_input("Enter Access Key", type="password")
+        
+        if user_pass == Secret_pass and Secret_pass is not None:
+            st.session_state.authenticated = True
+            st.rerun()  # Instantly reloads app to collapse sidebar
+        elif user_pass != "":
+            st.error("Access Denied")
+            
+    st.info("🔒 Please enter your access key in the sidebar to unlock the AI Sorter.")
+    st.stop() # CRITICAL: This completely stops the app from rendering the UI below!
 
-if user_pass == Secret_pass:
-    st.sidebar.success("Access Granted")
-    
+# --- MAIN APP RUNS ONLY IF AUTHENTICATED ---
+st.sidebar.success("Access Granted: A1HR Consulting")
 
-## Cached Models
+# 4. INITIALIZE MODELS (Hardwired for Cloud Stability)
 @st.cache_resource
-
 def init_models():
-    embeddings = GoogleGenerativeAIEmbeddings(model='gemini-embedding-2-preview')
-    llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-lite')
-
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    embeddings = GoogleGenerativeAIEmbeddings(model='models/embedding-001', google_api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', google_api_key=api_key)
     return embeddings, llm
 
 embeddings, llm = init_models()
 
-## Extract Text
-
+# 5. HELPER FUNCTION
 def extract_text(feed):
     text = ""
+    file_extension = feed.name.split('.')[-1].lower()
     try:
-        # Step 1: Try standard extraction
-        pdf_reader = PdfReader(feed)
-        for page in pdf_reader.pages:
-            content = page.extract_text()
-            if content:
-                text += content
-        
-        # Step 2: If no text was found, use OCR (The "Magic" Step)
-        if not text.strip():
-            # Reset feed pointer and convert PDF to images
-            feed.seek(0)
-            images = convert_from_bytes(feed.read())
-            for image in images:
-                text += pytesseract.image_to_string(image)
-                
+        if file_extension == 'pdf':
+            pdf_reader = PdfReader(feed)
+            for page in pdf_reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted
+        elif file_extension == 'docx':
+            doc = docx.Document(feed)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+        elif file_extension == 'txt':
+            text = feed.getvalue().decode("utf-8")
     except Exception as e:
-        st.error(f"Error reading {feed.name}")
-    
+        st.error(f"Error reading {feed.name}: {e}")
     return text
 
-## UI Layout
-
-st.title("🚀 Rocket Profit: Stop sorting resumes manually. Try this instead!")
+# 6. UI LAYOUT
+st.title("🚀 Rocket Profit: Stop sorting resumes manually.")
 st.markdown("### Revamping Operational Efficiency for HR Consulting")
 
 col1, col2 = st.columns([1, 1])
@@ -71,24 +90,19 @@ with col1:
     
 with col2:
     st.subheader("2. Upload Resumes")
-    uploaded_files = st.file_uploader("Upload PDF Resumes", type="pdf", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Resumes", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     
-## Processing Section
-
+# 7. PROCESSING SECTION
 if st.button("Start Sorting"):
     if not jd_text or not uploaded_files:
         st.warning("Please Provide both a Job Description and at least 1 Resume")
-        
     else:
         with st.spinner("Analyzing and Ranking Candidates..."):
-        
             all_extracted = [{"name": file.name, "text": extract_text(file)} for file in uploaded_files]
-            
-            
             resume_data = [r for r in all_extracted if r.get("text") and str(r["text"]).strip()]
             
             if len(resume_data) < len(all_extracted):
-                st.warning(f"⚠️ {len(all_extracted) - len(resume_data)} file(s) were skipped because no readable text was found (possibly scanned images).")
+                st.warning(f"⚠️ {len(all_extracted) - len(resume_data)} file(s) were skipped because no readable text was found.")
 
             if not resume_data:
                 st.error("No readable text found in any uploaded resumes. Process stopped.")
@@ -103,24 +117,23 @@ if st.button("Start Sorting"):
             results = []
             for i, score in enumerate(scores):
                 if score > 0.3:
-                    prompt = f""" You are an expert HR consultant. Critically evaluate this resume against the JD. 
+                    prompt = f"""You are an expert HR consultant. Critically evaluate this resume against the JD. 
                     Resume: {resume_texts[i]} 
                     JD: {jd_text}
                     
                     Provide a highly structured response:
                     - 3 Pros: (Bullet points)
                     - 1 Critical Con/Missing Skill:
-                    - Overall Verdict: (2-4 line summary)
+                    - Overall Verdict: (1-2 line summary)
                     """
                     analysis = llm.invoke(prompt)
                     results.append({
                         "Name" : resume_data[i]["name"],
                         "Similarity" : round(score * 100, 1),
                         "AI Analysis" : analysis.content
-                        })
-            ## Sort by Highest Score
-            results = sorted(results, key=lambda x: x["Similarity"], reverse = True )
-
+                    })
+            
+            results = sorted(results, key=lambda x: x["Similarity"], reverse=True)
             st.success(f"✅ Successfully analyzed {len(uploaded_files)} resumes!")
 
             for res in results:
@@ -129,16 +142,10 @@ if st.button("Start Sorting"):
                     
             if results:
                 df = pd.DataFrame(results)
-                # Remove the long analysis for a clean CSV
                 csv = df[['Name', 'Similarity']].to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="Download Ranking Report (CSV)",
                     data=csv,
                     file_name='resume_sorting.csv',
                     mime='text/csv',
-                    )
-
-else:
-    st.sidebar.error("Acess Denied")
-    st.stop()
-    
+                )
