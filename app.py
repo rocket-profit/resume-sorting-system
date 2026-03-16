@@ -44,28 +44,23 @@ if not st.session_state.authenticated:
     st.info("🔒 Please enter your access key in the sidebar to unlock the AI Sorter.")
     st.stop() # CRITICAL: This completely stops the app from rendering the UI below!
 
-# --- MAIN APP RUNS ONLY IF AUTHENTICATED ---
+
 st.sidebar.success("Access Granted: A1HR Consulting")
 
-# 4. INITIALIZE MODELS (Hardwired for Cloud Stability)
 @st.cache_resource
+
 def init_models():
-    # Try to get the key from the environment, and if that fails, grab it directly from Streamlit secrets
-    api_key = os.environ.get("GEMINI_API_KEY") 
+    api_key = os.environ.get("GOOGLE_API_KEY")
     
-    if not api_key:
-        try:
-            api_key = st.secrets["GEMINI_API_KEY"]
-        except:
-            api_key = None
-            
-    # The Safety Net
-    if not api_key:
-        st.error("🚨 CRITICAL SYSTEM ERROR: API Key missing from Streamlit Secrets.")
-        st.stop()
-        
-    embeddings = GoogleGenerativeAIEmbeddings(model='models/embedding-001', google_api_key=api_key)
-    llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', google_api_key=api_key)
+    # We use 'embedding-001' and 'gemini-1.5-flash' - these are the stable industry standards
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model='models/embedding-001', 
+        google_api_key=api_key
+    )
+    llm = ChatGoogleGenerativeAI(
+        model='gemini-1.5-flash', 
+        google_api_key=api_key
+    )
     return embeddings, llm
 
 embeddings, llm = init_models()
