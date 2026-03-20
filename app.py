@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json # Added for handling structured data
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
@@ -131,53 +132,94 @@ if st.button("Start Sorting"):
                 })
             scored_resumes = sorted(scored_resumes, key=lambda x: x["score"], reverse=True)
 
-            # --- THE NEW HYBRID LOGIC ---
+            # --- HYBRID FILTERING LOGIC ---
             MIN_SCORE = 0.50
             TOP_PERCENT = 0.50
             
-            # Calculate how many resumes make up 50% (minimum 1)
             max_candidates = max(1, int(len(scored_resumes) * TOP_PERCENT))
-            
-            # Filter the top 50% by the 0.50 threshold
             final_candidates = [c for c in scored_resumes[:max_candidates] if c["score"] >= MIN_SCORE]
 
-            # Fallback: If no one hits 0.50, show the closest match to avoid a blank screen
             if not final_candidates and scored_resumes:
                 final_candidates = [scored_resumes[0]]
                 st.info("⚠️ No candidates met the strict 50% keyword match threshold. Showing the closest available profile.")
-            # -----------------------------
 
-            # Send ONLY the filtered candidates to the LLM
+            # --- LLM JSON EXTRACTION LOGIC ---
             results = []
             for candidate in final_candidates:
                 prompt = f"""You are an expert HR. Critically evaluate this resume against the JD. 
                 Resume: {candidate['text']} 
                 JD: {jd_text}
                 
-                Provide a highly structured response:
-                - 3 Pros: (Bullet points)
-                - 1 Critical Con/Missing Skill:
-                - Overall Verdict: (1-2 line summary)
+                Provide your response STRICTLY in the following JSON format. Do not use markdown blocks, just raw JSON:
+                {{
+                    "candidate_name": "Full Name from resume",
+                    "contact_info": {{
+                        "email": "Email address (or N/A)",
+                        "phone": "Phone number (or N/A)"
+                    }},
+                    "analysis": {{
+                        "pros": ["bullet 1", "bullet 2", "bullet 3"],
+                        "critical_con": "Main missing skill",
+                        "verdict": "1-2 line summary"
+                    }}
+                }}
                 """
                 analysis = llm.invoke(prompt)
-                results.append({
-                    "Name" : candidate["name"],
-                    "Similarity" : round(candidate["score"] * 100, 1),
-                    "AI Analysis" : analysis.content
-                })
+                
+                try:
+                    # Clean the response to ensure valid JSON parsing
+                    clean_content = analysis.content.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(clean_content)
+                    
+                    results.append({
+                        "Filename": candidate["name"],
+                        "Name" : data.get("candidate_name", candidate["name"]),
+                        "Email": data.get("contact_info", {}).get("email", "N/A"),
+                        "Phone": data.get("contact_info", {}).get("phone", "N/A"),
+                        "Similarity" : round(candidate["score"] * 100, 1),
+                        "Analysis" : data.get("analysis", {})
+                    })
+                except Exception as e:
+                    # Failsafe in case the LLM breaks formatting
+                    st.error(f"Failed to extract structured data for {candidate['name']}. Continuing...")
+                    continue
              
             st.success(f"✅ Successfully filtered down to the top {len(results)} candidate(s)!")
 
+            # --- DISPLAY LOGIC ---
             for res in results:
                 with st.expander(f"{res['Name']} - Fit Score: {res['Similarity']}%"):
-                    st.markdown(res["AI Analysis"])
+                    col_contact, col_eval = st.columns([1, 2])
                     
+                    with col_contact:
+                        st.write("**Contact Details:**")
+                        st.write(f"📧 {res['Email']}")
+                        st.write(f"📞 {res['Phone']}")
+                        st.caption(f"Original File: {res['Filename']}")
+                    
+                    with col_eval:
+                        st.write("**Pros:**")
+                        for pro in res['Analysis'].get('pros', []):
+                            st.write(f"- {pro}")
+                        st.write(f"**Critical Con:** {res['Analysis'].get('critical_con', 'N/A')}")
+                        st.info(f"**Verdict:** {res['Analysis'].get('verdict', 'N/A')}")
+                    
+            # --- UPGRADED CSV EXPORT ---
             if results:
+                # Flatten the analysis dictionary for cleaner CSV export
                 df = pd.DataFrame(results)
-                csv = df[['Name', 'Similarity']].to_csv(index=False).encode('utf-8')
+                df['Pros'] = df['Analysis'].apply(lambda x: " | ".join(x.get('pros', [])))
+                df['Critical Con'] = df['Analysis'].apply(lambda x: x.get('critical_con', ''))
+                df['Verdict'] = df['Analysis'].apply(lambda x: x.get('verdict', ''))
+                
+                # Select only the columns we want to export
+                export_df = df[['Name', 'Email', 'Phone', 'Similarity', 'Pros', 'Critical Con', 'Verdict']]
+                csv = export_df.to_csv(index=False).encode('utf-8')
+                
                 st.download_button(
-                    label="Download Ranking Report (CSV)",
+                    label="Download Full Ranking Report (CSV)",
                     data=csv,
-                    file_name='resume_sorting.csv',
+                    file_name='rocket_profit_candidates.csv',
                     mime='text/csv',
                 )
+                
