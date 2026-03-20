@@ -44,7 +44,7 @@ if not st.session_state.authenticated:
     st.info("🔒 Please enter your access key in the sidebar to unlock the AI Sorter.")
     st.stop() # CRITICAL: This completely stops the app from rendering the UI below!
 
-st.sidebar.success("Access Granted: A1HR Consulting")
+st.sidebar.success("Access Granted:")
 
 # 4. INITIALIZE MODELS
 @st.cache_resource
